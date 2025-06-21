@@ -53,7 +53,7 @@ jobs:
             -validity 9999 \
             -dname "CN=Release"
 
-          mkdir .godot
+          mkdir .godot || true
           cat << END > .godot/export_credentials.cfg
           [preset.0]
 
