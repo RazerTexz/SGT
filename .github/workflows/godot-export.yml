@@ -1,0 +1,93 @@
+name: Godot Export
+
+on:
+  workflow_dispatch:
+
+env:
+  GODOT_VERSION: "4.4.1-stable"
+  DEBUG_KEYSTORE_ALIAS: DEBUGALIAS
+  DEBUG_KEYSTORE_PASSWORD: DEBUGPASSWORD
+  RELEASE_KEYSTORE_ALIAS: RELEASEALIAS
+  RELEASE_KEYSTORE_PASSWORD: RELEASEPASSWORD
+
+jobs:
+  godot-export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: 21
+          distribution: temurin
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          log-accepted-android-sdk-licenses: false
+
+      - name: Create Key
+        run: |
+          keytool \
+            -genkeypair \
+            -keyalg RSA \
+            -keysize 2048 \
+            -keystore debug.keystore \
+            -alias "$DEBUG_KEYSTORE_ALIAS" \
+            -storepass "$DEBUG_KEYSTORE_PASSWORD" \
+            -keypass "$DEBUG_KEYSTORE_PASSWORD" \
+            -validity 9999 \
+            -dname "CN=Debug"
+
+          keytool \
+            -genkeypair \
+            -keyalg RSA \
+            -keysize 2048 \
+            -keystore release.keystore \
+            -alias "$RELEASE_KEYSTORE_ALIAS" \
+            -storepass "$RELEASE_KEYSTORE_PASSWORD" \
+            -keypass "$RELEASE_KEYSTORE_PASSWORD" \
+            -validity 9999 \
+            -dname "CN=Release"
+
+          mkdir .godot || true
+          cat << END > .godot/export_credentials.cfg
+          [preset.0]
+
+          script_encryption_key=""
+
+          [preset.0.options]
+
+          keystore/debug="${GITHUB_WORKSPACE}/debug.keystore"
+          keystore/debug_user="$DEBUG_KEYSTORE_ALIAS"
+          keystore/debug_password="$DEBUG_KEYSTORE_PASSWORD"
+          keystore/release="${GITHUB_WORKSPACE}/release.keystore"
+          keystore/release_user="$RELEASE_KEYSTORE_ALIAS"
+          keystore/release_password="$RELEASE_KEYSTORE_PASSWORD"
+          END
+
+      # In order to update the game's icon for Windows, we have to install wine
+      - name: Install Wine
+        id: install_wine
+        run: |
+          sudo apt install wine64
+          printf "wine_path=$(which wine64)" >> "$GITHUB_OUTPUT"
+
+      - name: Export
+        id: export
+        uses: firebelley/godot-export@v6.0.0
+        with:
+          godot_executable_download_url: https://github.com/godotengine/godot-builds/releases/download/${GODOT_VERSION}/Godot_v${GODOT_VERSION}_linux.x86_64.zip
+          godot_export_templates_download_url: https://github.com/godotengine/godot-builds/releases/download/${GODOT_VERSION}/Godot_v${GODOT_VERSION}_export_templates.tpz
+          relative_project_path: ./
+          cache: true
+          archive_output: true
+          wine_path: ${{ steps.install_wine.outputs.wine_path }}
+
+      - name: Upload Exported
+        uses: actions/upload-artifact@v4
+        with:
+          name: exported
+          path: ${{ steps.export.outputs.archive_directory }}
